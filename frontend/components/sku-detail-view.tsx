@@ -6,9 +6,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import type { InventoryItem } from "@/lib/api-client"
+import type { InventoryItem, StockMovement } from "@/lib/mock-data"
 import { useEffect, useState, useMemo } from "react"
-import { apiClient, type StockMovement } from "@/lib/api-client"
+import { MOCK_STOCK_MOVEMENTS } from "@/lib/mock-data"
 
 interface SkuDetailViewProps {
   sku: InventoryItem
@@ -30,8 +30,6 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
   const [stockMovementLoading, setStockMovementLoading] = useState(false);
   const [stockMovementError, setStockMovementError] = useState<string | null>(null);
   const [openingStocks, setOpeningStocks] = useState<Record<string, number>>({});
-  const [stockVarianceData, setStockVarianceData] = useState<any[]>([]);
-  const [forceUpdate, setForceUpdate] = useState(0);
 
   const warehouseData = useMemo(() => {
     const warehouses = new Map();
@@ -45,7 +43,7 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
         warehouse: name,
         warehouseCode: code,
         warehouseId: warehouseId,
-        openingStock: warehouseId ? (openingStocks[warehouseId.toString()] || wh.quantity || 0) : (wh.quantity || 0),
+        openingStock: wh.quantity || 0,
         lastUpdated: "N/A",
       });
     });
@@ -54,13 +52,12 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
       const sourceWarehouse = movement.warehouse?.code;
       const destWarehouse = movement.warehouse_dest?.code;
 
-
       if (sourceWarehouse && !warehouses.has(sourceWarehouse)) {
         warehouses.set(sourceWarehouse, {
           warehouse: movement.warehouse?.name || sourceWarehouse,
           warehouseCode: sourceWarehouse,
-          warehouseId: movement.warehouse?.id, // Add warehouse ID if available
-          openingStock: movement.warehouse?.id ? (openingStocks[movement.warehouse.id.toString()] || 0) : 0,
+          warehouseId: movement.warehouse?.id,
+          openingStock: 0,
           calculatedStock: 0,
           lastUpdated: "N/A",
         });
@@ -70,8 +67,8 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
         warehouses.set(destWarehouse, {
           warehouse: movement.warehouse_dest?.name || destWarehouse,
           warehouseCode: destWarehouse,
-          warehouseId: movement.warehouse_dest?.id, // Add warehouse ID if available
-          openingStock: movement.warehouse_dest?.id ? (openingStocks[movement.warehouse_dest.id.toString()] || 0) : 0,
+          warehouseId: movement.warehouse_dest?.id,
+          openingStock: 0,
           calculatedStock: 0,
           lastUpdated: "N/A",
         });
@@ -80,7 +77,7 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
 
     const result = Array.from(warehouses.values());
     return result;
-  }, [sku.warehouse_inventory, stockMovementData, openingStocks, forceUpdate]);
+  }, [sku.warehouse_inventory, stockMovementData]);
 
   // Enhanced function to get stock movement data for a warehouse
   const getWarehouseMovements = (warehouseCode: string) => {
@@ -161,7 +158,6 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
     let totalConsumption = 0;
     let totalClosingStock = 0;
 
-
     warehouseData.forEach((row) => {
       const movements = getWarehouseMovements(row.warehouseCode);
 
@@ -211,45 +207,14 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
 
   useEffect(() => {
     const fetchStockMovementData = async () => {
-      if (!sku?.odoo_id == null && !sku?.id == null) {
-        console.warn("No product ID available for stock movement data");
-        return;
-      }
-
       setStockMovementLoading(true);
       setStockMovementError(null);
       try {
-        const productId = sku.odoo_id?.toString() || sku.id?.toString() || "";
-
-        // Use date range API
-        const { success, data, opening_stocks } = await apiClient.getStockMovementDetailsByDateRange(
-          productId,
-          dateRange.startDate,
-          dateRange.endDate
-        );
-     
-        if (success) {
-          setStockMovementData(data);
-          setOpeningStocks(opening_stocks || {});
-
-          // Fetch stock variance data for the end date
-          try {
-            const varianceResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/stock-corrections/variance/${productId}?date=${dateRange.endDate}`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-                'Content-Type': 'application/json'
-              }
-            });
-            const varianceData = await varianceResponse.json();
-            if (varianceData.success) {
-              setStockVarianceData(varianceData.data);
-            } else {
-              setStockVarianceData([]);
-            }
-          } catch (varianceErr) {
-            setStockVarianceData([]);
-          }
-        }
+        // Simulate API delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Use mock data
+        setStockMovementData(MOCK_STOCK_MOVEMENTS);
       } catch (err: any) {
         setStockMovementError(err.message || "Failed to fetch stock movement data");
         console.error("Stock movement data error:", err);
@@ -260,19 +225,6 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
 
     fetchStockMovementData();
   }, [sku.odoo_id, sku.id, dateRange.startDate, dateRange.endDate]);
-
-  useEffect(() => {
-    // Force a re-calculation by updating a dummy state if needed
-    setForceUpdate(prev => prev + 1);
-  }, [stockMovementData]);
-
-  // Monitor state changes
-  useEffect(() => {
-  }, [stockMovementData]);
-
-  useEffect(() => {
-  }, [openingStocks]);
-
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -315,7 +267,7 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
             <div className="flex items-center space-x-4 text-sm text-gray-600">
               <span>Barcode: {sku.barcode}</span>
               <span>•</span>
-              <span>Category: {Array.isArray(sku.category) ? (sku.category[0] as any)?.display_name : (sku.category as any)?.display_name || "Uncategorized"}</span>
+              <span>Category: {sku.category?.display_name || "Uncategorized"}</span>
               <span>•</span>
               <span>Reorder Level: {sku.reordering_min_qty}</span>
             </div>
@@ -337,7 +289,7 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Category:</span>
-                  <span>{Array.isArray(sku.category) ? (sku.category[0] as any)?.display_name : (sku.category as any)?.display_name || "Uncategorized"}</span>
+                  <span>{sku.category?.display_name || "Uncategorized"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Unit of Measure:</span>
@@ -457,8 +409,6 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
                     <TableHead className="font-medium text-gray-700 text-center min-w-[120px]">Manufacturing</TableHead>
                     <TableHead className="font-medium text-gray-700 text-center min-w-[120px]">Consumption</TableHead>
                     <TableHead className="font-medium text-gray-700 text-center min-w-[120px]">Closing Stock</TableHead>
-                    <TableHead className="font-medium text-gray-700 text-center min-w-[120px]">Corrected Stock</TableHead>
-                    <TableHead className="font-medium text-gray-700 text-center min-w-[120px]">Stock Variance</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -479,14 +429,6 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
                           - Math.abs(movements.wastages)
                           - Math.abs(movements.consumption)
                         );
-
-                        // Get variance data for this warehouse
-                        const warehouseVariance = stockVarianceData.find(
-                          v => v.warehouse_code === row.warehouseCode
-                        );
-                        const correctedStock = warehouseVariance?.corrected_closing_stock || null;
-                        const stockVariance = warehouseVariance?.stock_variance || 0;
-                        const hasCorrection = warehouseVariance?.has_correction || false;
 
                         return (
                           <TableRow key={index} className="hover:bg-gray-50">
@@ -509,25 +451,6 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
                             <TableCell className="text-center text-blue-500">{movements.manufacturing}</TableCell>
                             <TableCell className="text-center text-blue-500">{movements.consumption}</TableCell>
                             <TableCell className="text-center font-medium text-blue-600">{closingStock}</TableCell>
-                            <TableCell className="text-center">
-                              {hasCorrection ? (
-                                <span className="font-medium text-purple-600">{correctedStock}</span>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {hasCorrection ? (
-                                <Badge
-                                  variant={stockVariance > 0 ? "destructive" : stockVariance < 0 ? "default" : "secondary"}
-                                  className="text-xs"
-                                >
-                                  {stockVariance > 0 ? '+' : ''}{stockVariance}
-                                </Badge>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </TableCell>
                           </TableRow>
                         );
                       })}
@@ -545,27 +468,11 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
                         <TableCell className="text-center font-bold text-blue-500">{totals.totalManufacturing}</TableCell>
                         <TableCell className="text-center font-bold text-blue-500">{totals.totalConsumption}</TableCell>
                         <TableCell className="text-center font-bold text-blue-600">{totals.totalClosingStock}</TableCell>
-                        <TableCell className="text-center font-bold text-purple-600">
-                          {stockVarianceData.reduce((sum, v) => sum + (v.corrected_closing_stock || 0), 0) || '-'}
-                        </TableCell>
-                        <TableCell className="text-center font-bold">
-                          {stockVarianceData.length > 0 ? (
-                            <Badge
-                              variant={stockVarianceData.reduce((sum, v) => sum + v.stock_variance, 0) > 0 ? "destructive" : "default"}
-                              className="text-xs"
-                            >
-                              {stockVarianceData.reduce((sum, v) => sum + v.stock_variance, 0) > 0 ? '+' : ''}
-                              {stockVarianceData.reduce((sum, v) => sum + v.stock_variance, 0)}
-                            </Badge>
-                          ) : (
-                            '-'
-                          )}
-                        </TableCell>
                       </TableRow>
                     </>
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8 text-gray-500">
+                      <TableCell colSpan={12} className="text-center py-8 text-gray-500">
                         No warehouse data available for this SKU
                       </TableCell>
                     </TableRow>

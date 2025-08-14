@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { apiClient, InventoryItem } from "@/lib/api-client"
+import { MOCK_INVENTORY_DATA, type InventoryItem } from "@/lib/mock-data"
 
 export function useInventory(initialPage = 1, itemsPerPage = 30) {
   const [inventory, setInventory] = useState<InventoryItem[]>([])
@@ -23,17 +23,20 @@ export function useInventory(initialPage = 1, itemsPerPage = 30) {
       setError(null)
       setDataLoaded(false)
 
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      let filteredData = [...MOCK_INVENTORY_DATA]
+
       if (searchQuery) {
-        // Search inventory using API
-        const { data, total } = await apiClient.searchInventory(searchQuery, page, itemsPerPage)
-        setInventory(data || [])
-        setTotalItems(total || 0)
-      } else {
-        // Get all inventory using API
-        const { data, total } = await apiClient.getInventory()
-        setInventory(data || [])
-        setTotalItems(total || 0)
+        filteredData = filteredData.filter(item =>
+          item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (item.barcode && item.barcode.includes(searchQuery))
+        )
       }
+
+      setInventory(filteredData)
+      setTotalItems(filteredData.length)
       
       // Mark data as loaded after successful fetch
       setDataLoaded(true)
@@ -51,11 +54,22 @@ export function useInventory(initialPage = 1, itemsPerPage = 30) {
 
   const fetchStockCounts = async () => {
     try {
-      const stockCounts = await apiClient.getStockCounts()
-      if (stockCounts) {
-        setLowStockCount(stockCounts.lowStockCount || 0)
-        setOutOfStockCount(stockCounts.outOfStockCount || 0)
-      }
+      // Calculate stock counts from mock data
+      let lowStock = 0
+      let outOfStock = 0
+
+      MOCK_INVENTORY_DATA.forEach(item => {
+        const totalStock = item.warehouse_inventory?.reduce((sum, wh) => sum + (wh.stock_quantity || 0), 0) || 0
+        
+        if (totalStock === 0) {
+          outOfStock++
+        } else if (totalStock <= item.reordering_min_qty) {
+          lowStock++
+        }
+      })
+
+      setLowStockCount(lowStock)
+      setOutOfStockCount(outOfStock)
     } catch (err) {
       console.error("Error fetching stock counts:", err)
       // Set default values on error
