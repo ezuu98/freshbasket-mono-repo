@@ -1,12 +1,17 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { apiClient } from "@/lib/api-client"
 
 interface User {
   id: string
   email: string
   role: string
+}
+
+const DEMO_USER: User = {
+  id: "demo-user-1",
+  email: "demo@freshbasket.com",
+  role: "Admin"
 }
 
 export function useAuth() {
@@ -23,17 +28,19 @@ export function useAuth() {
       setLoading(true)
       setError(null)
 
-      if (apiClient.isAuthenticated()) {
-        const currentUser = await apiClient.getCurrentUser()
-        setUser(currentUser)
+      // Check if user is "logged in" via localStorage
+      const savedUser = localStorage.getItem('demo_user')
+      if (savedUser) {
+        setUser(JSON.parse(savedUser))
       } else {
-        setUser(null)
+        // Auto-login demo user for this demo
+        setUser(DEMO_USER)
+        localStorage.setItem('demo_user', JSON.stringify(DEMO_USER))
       }
     } catch (err: any) {
       console.error("Auth check failed:", err)
       setUser(null)
-      // Clear invalid token
-      apiClient.clearToken()
+      localStorage.removeItem('demo_user')
     } finally {
       setLoading(false)
     }
@@ -44,9 +51,19 @@ export function useAuth() {
       setLoading(true)
       setError(null)
 
-      const authResponse = await apiClient.login(email, password)
-      setUser(authResponse.user)
-      return authResponse
+      // Simulate login validation
+      if (email && password) {
+        const user = {
+          id: "demo-user-1",
+          email: email,
+          role: "Admin"
+        }
+        setUser(user)
+        localStorage.setItem('demo_user', JSON.stringify(user))
+        return { token: "demo-token", user }
+      } else {
+        throw new Error("Please enter valid credentials")
+      }
     } catch (err: any) {
       setError(err.message || "Login failed")
       throw err
@@ -60,8 +77,13 @@ export function useAuth() {
       setLoading(true)
       setError(null)
 
-      const authResponse = await apiClient.register(email, password, name)
-      return authResponse
+      // Simulate registration
+      const user = {
+        id: "demo-user-1",
+        email: email,
+        role: "Admin"
+      }
+      return { token: "demo-token", user }
     } catch (err: any) {
       setError(err.message || "Registration failed")
       throw err
@@ -73,11 +95,10 @@ export function useAuth() {
   const logout = async () => {
     try {
       setLoading(true)
-      await apiClient.logout()
+      localStorage.removeItem('demo_user')
       setUser(null)
     } catch (err: any) {
       console.error("Logout error:", err)
-      // Clear user even if logout fails
       setUser(null)
     } finally {
       setLoading(false)
