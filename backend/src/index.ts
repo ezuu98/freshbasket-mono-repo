@@ -11,6 +11,7 @@ import { authRoutes } from './routes/auth';
 import { inventoryRoutes } from './routes/inventory';
 import { stockMovementsRoutes } from './routes/stockMovements';
 import { warehousesRoutes } from './routes/warehouses';
+import { stockCorrectionsRoutes } from './routes/stockCorrections';
 import { scheduledSyncService } from './services/scheduledSync';
 import syncRoutes from './routes/sync';
 
@@ -77,6 +78,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/stock-movements', stockMovementsRoutes);
 app.use('/api/warehouses', warehousesRoutes);
+app.use('/api/stock-corrections', stockCorrectionsRoutes);
 app.use('/api/sync', syncRoutes);
 
 // Error handling middleware
