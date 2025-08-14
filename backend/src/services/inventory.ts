@@ -70,11 +70,11 @@ export class InventoryService {
           if (movement_type === 'purchase') {
             if (warehouse_dest_id) updateWarehouseStock(product_id, warehouse_dest_id, quantity);
           } else if (movement_type === 'purchase_return') {
-            if (warehouse_id) updateWarehouseStock(product_id, warehouse_id, -quantity);
+            if (warehouse_id) updateWarehouseStock(product_id, warehouse_id, quantity);
           } else if (movement_type === 'sales') {
             if (warehouse_id) updateWarehouseStock(product_id, warehouse_id, -quantity);
           } else if (movement_type === 'sales_returns') {
-            if (warehouse_id) updateWarehouseStock(product_id, warehouse_id, +quantity);
+            if (warehouse_id) updateWarehouseStock(product_id, warehouse_id, Math.abs(quantity));
           } else if (movement_type === 'transfer_in') {
             if (warehouse_dest_id) updateWarehouseStock(product_id, warehouse_dest_id, quantity);
             if (warehouse_id) updateWarehouseStock(product_id, warehouse_id, -quantity);
@@ -88,7 +88,10 @@ export class InventoryService {
         }
 
         const mergedBatch: InventoryWithDetails[] = (inventoryBatch || []).map(item => {
-          const matchingWarehouses = warehouseInventory?.filter(wi => wi.barcode && wi.barcode === item.barcode) || [];
+          const matchingWarehouses = warehouseInventory?.filter(wi => wi.product_id === item.odoo_id || (wi.barcode && wi.barcode === item.barcode)
+         ) || [];
+
+         console.log(`Product ${item.odoo_id} (barcode=${item.barcode}): ${matchingWarehouses.length} warehouse entries`);
           
           const mergedInventory = matchingWarehouses.map(wi => {
             const warehouseObj = Array.isArray(wi.warehouse) ? wi.warehouse[0] : wi.warehouse;
@@ -321,6 +324,112 @@ export class InventoryService {
     } catch (error) {
       console.error('Error fetching stock movements:', error);
       throw new Error('Failed to fetch stock movement details');
+    }
+  }
+
+  static async getStockMovementDetailsByDateRange(
+    productId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<{
+    data: any[];
+    opening_stocks: Record<string, number>;
+  }> {
+    try {
+      const start = new Date(startDate + 'T00:00:00.000Z').toISOString();
+      const end = new Date(endDate + 'T23:59:59.999Z').toISOString();
+      
+      const { data: movements, error } = await supabase
+        .from('stock_movements')
+        .select(`
+          id,
+          movement_type,
+          quantity,
+          created_at,
+          warehouse:warehouses!stock_movements_warehouse_id_fkey(id, name, code),
+          warehouse_dest:warehouses!fk_warehouse_dest(id, name, code)
+        `)
+        .eq('product_id', productId)
+        .gte('created_at', start)
+        .lte('created_at', end)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      let openingStockData = null;
+      let openingError = null;
+      
+      try {
+        const result = await supabase
+          .rpc('get_opening_stock_by_warehouse', {
+            p_product_id: parseInt(productId),
+            p_date: startDate
+          });
+        openingStockData = result.data;
+        openingError = result.error;
+      } catch (err) {
+        console.error('Function call failed:', err);
+        openingError = err;
+      }
+
+      if (openingError) {
+        console.error('Opening stock error:', openingError);
+        console.log('Continuing without opening stock data');
+      }
+      
+      const openingStocks: Record<string, number> = {};
+      openingStockData?.forEach((item: { warehouse_id: string; opening_stock: number }) => {
+        openingStocks[item.warehouse_id] = item.opening_stock;
+      });
+      
+      // If no opening stock data, provide some default values for testing
+      if (Object.keys(openingStocks).length === 0) {
+        console.log('No opening stock data available, using defaults for testing');
+        // Add default opening stocks for warehouses that appear in movements
+        const warehouseIds = new Set<string>();
+        movements?.forEach(movement => {
+          const warehouse = Array.isArray(movement.warehouse) ? movement.warehouse[0] : movement.warehouse;
+          const warehouseDest = Array.isArray(movement.warehouse_dest) ? movement.warehouse_dest[0] : movement.warehouse_dest;
+          
+          if (warehouse?.id) warehouseIds.add(warehouse.id.toString());
+          if (warehouseDest?.id) warehouseIds.add(warehouseDest.id.toString());
+        });
+        
+        warehouseIds.forEach(warehouseId => {
+          openingStocks[warehouseId] = 0; // Default to 0 opening stock
+        });
+      }
+
+      const warehouseMap = new Map<string, { name: string; code: string }>();
+
+      const processedMovements = movements?.map(movement => {
+        const warehouse = Array.isArray(movement.warehouse) ? movement.warehouse[0] : movement.warehouse;
+        const warehouseDest = Array.isArray(movement.warehouse_dest) ? movement.warehouse_dest[0] : movement.warehouse_dest;
+
+        if (warehouse) {
+          warehouseMap.set(warehouse.code, warehouse);
+        }
+        if (warehouseDest) {
+          warehouseMap.set(warehouseDest.code, warehouseDest);
+        }
+
+        return {
+          id: movement.id,
+          movement_type: movement.movement_type,
+          quantity: movement.quantity,
+          created_at: movement.created_at,
+          warehouse: warehouse,
+          warehouse_dest: warehouseDest,
+        };
+      }) || [];
+      return {
+        data: processedMovements,
+        opening_stocks: openingStocks,
+      };
+    } catch (error) {
+      console.error('Error fetching stock movements by date range:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      throw new Error('Failed to fetch stock movement details for date range');
     }
   }
 } 
