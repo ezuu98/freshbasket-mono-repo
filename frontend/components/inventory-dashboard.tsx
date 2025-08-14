@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { Search, ChevronDown, User, LogOut, AlertTriangle, Edit, Database } from "lucide-react"
+import { Search, User, LogOut, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -30,12 +30,7 @@ import {
 import { SkuDetailView } from "./sku-detail-view"
 import { useInventory } from "@/hooks/use-inventory"
 import { useAuth } from "@/hooks/use-auth"
-import type { InventoryItem } from "@/lib/api-client"
-import { AddProductModal } from "./add-product-modal"
-import { EditProductModal } from "./edit-product-modal"
-import { ExportInventory } from "./export-inventory"
-import { OdooSyncPanel } from "./odoo-sync-panel"
-import { StockCorrectionsUpload } from "./stock-corrections-upload"
+import type { InventoryItem } from "@/lib/mock-data"
 import { useEffect } from "react"
 
 export function InventoryDashboard() {
@@ -44,7 +39,6 @@ export function InventoryDashboard() {
   const [stockStatus, setStockStatus] = useState("All Status")
   const [currentView, setCurrentView] = useState<"dashboard" | "sku-detail">("dashboard")
   const [selectedSku, setSelectedSku] = useState<InventoryItem | null>(null)
-  const [showOdooSync, setShowOdooSync] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   
   const itemsPerPage = 30
@@ -70,7 +64,7 @@ export function InventoryDashboard() {
       setSearchTerm(query);
       setPage(1);
       searchInventory(query);
-    }, 200), // Further reduced debounce time for better responsiveness
+    }, 200),
     [searchInventory, setPage]
   );
 
@@ -102,7 +96,7 @@ export function InventoryDashboard() {
     setPage(page - 1)
   }
 
-  // Transform Supabase data for display
+  // Transform inventory data for display
   const transformedInventory = useMemo(() => {  
     if (!inventory || !Array.isArray(inventory)) {
       return [];
@@ -156,7 +150,7 @@ export function InventoryDashboard() {
     return Array.from(categories).sort()
   }, [transformedInventory])
 
-  // Client-side filtering (temporary until server-side filtering is fixed)
+  // Client-side filtering
   const filteredData = useMemo(() => {
     const filtered = transformedInventory.filter((item) => {
       const matchesSearch =
@@ -344,24 +338,6 @@ return (
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Live Inventory Tracking</h1>
-          <div className="flex space-x-2">
-            <Dialog open={showOdooSync} onOpenChange={setShowOdooSync}>
-              <DialogTrigger asChild>
-                {/* <Button variant="outline">
-                    <Database className="w-4 h-4 mr-2" />
-                    Connect Odoo
-                  </Button> */}
-              </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Odoo Integration</DialogTitle>
-                  <DialogDescription>Sync inventory data between Odoo and your FreshBasket system</DialogDescription>
-                </DialogHeader>
-                <OdooSyncPanel />
-              </DialogContent>
-            </Dialog>
-            {/* <AddProductModal onProductAdded={refetch} /> */}
-          </div>
         </div>
 
         {/* Dashboard Stats */}
@@ -415,7 +391,7 @@ return (
         {/* Search and Filters */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
           <div className="flex flex-col space-y-4">
-            {/* Search Bar with Export Button and Date Dropdowns */}
+            {/* Search Bar */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -433,18 +409,6 @@ return (
                     }
                   }}
                   className="pl-10 bg-gray-50 border-gray-200"
-                />
-              </div>
-              <div className="flex items-center gap-2 md:gap-4">
-                {/* Stock Corrections Upload */}
-                <StockCorrectionsUpload />
-
-                {/* Export Button */}
-                <ExportInventory
-                  filteredData={paginatedData}
-                  searchTerm={searchTerm}
-                  category={category}
-                  stockStatus={stockStatus}
                 />
               </div>
             </div>
