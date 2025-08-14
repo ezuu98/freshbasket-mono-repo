@@ -20,4 +20,6 @@ router.get('/stock-counts', InventoryController.getStockCounts);
 // GET /api/inventory/stock-movements/:productId - Get stock movement details
 router.get('/stock-movements/:productId', InventoryController.getStockMovementDetails);
 
+router.get('/stock-movements/date-range/:productId', InventoryController.getStockMovementDetailsByDateRange);
+
 export { router as inventoryRoutes }; 
