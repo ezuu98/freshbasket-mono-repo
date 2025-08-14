@@ -35,6 +35,7 @@ import { AddProductModal } from "./add-product-modal"
 import { EditProductModal } from "./edit-product-modal"
 import { ExportInventory } from "./export-inventory"
 import { OdooSyncPanel } from "./odoo-sync-panel"
+import { StockCorrectionsUpload } from "./stock-corrections-upload"
 import { useEffect } from "react"
 
 export function InventoryDashboard() {
@@ -46,7 +47,7 @@ export function InventoryDashboard() {
   const [showOdooSync, setShowOdooSync] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   
-  const itemsPerPage = 100
+  const itemsPerPage = 30
 
   const {
     inventory,
@@ -93,7 +94,6 @@ export function InventoryDashboard() {
     await logout()
   }
 
-  // Handle pagination
   const handleNextPage = () => {
     setPage(page + 1)
   }
@@ -123,7 +123,6 @@ export function InventoryDashboard() {
       item.warehouse_inventory?.forEach((wh) => {
         const whCode = wh.warehouse?.code?.toLowerCase();
         if (whCode && validWarehouseCodes.includes(whCode)) {
-          // Use calculated stock quantity from movements if available, otherwise use static quantity
           const stockQuantity = wh.stock_quantity !== undefined ? wh.stock_quantity : wh.quantity || 0;
           warehouseMap[whCode] = stockQuantity;
         }
@@ -293,23 +292,6 @@ export function InventoryDashboard() {
     return <SkuDetailView sku={selectedSku} onBack={handleBackToDashboard} />
   }
 
-//   const fetchStockMovement = async () => {
-//     if (!selectedMonth || !selectedYear || !inventory.product_id) {
-//       console.warn("Missing data to fetch stock movement");
-//       return;
-//     } try {
-//       await stockMovementService({
-//         date: selectedDate.toISOString().split("T")[0], // Format: YYYY-MM-DD
-//         month: selectedMonth,
-//         year: selectedYear,
-//         odoo_id: odooId,
-//       });
-//     } catch (error) {
-//       console.error("Failed to fetch stock movement:", error);
-//     }
-//   };
-// }
-
 return (
   <div className="min-h-screen bg-gray-50">
     {/* Header */}
@@ -454,6 +436,8 @@ return (
                 />
               </div>
               <div className="flex items-center gap-2 md:gap-4">
+                {/* Stock Corrections Upload */}
+                <StockCorrectionsUpload />
 
                 {/* Export Button */}
                 <ExportInventory
@@ -512,8 +496,8 @@ return (
                 <TableHead className="font-medium text-gray-700 text-center">CLIWH</TableHead>
                 <TableHead className="font-medium text-gray-700 text-center">BHDWH</TableHead>
                 <TableHead className="font-medium text-gray-700 text-center">ECMWH</TableHead>
+                <TableHead className="font-medium text-gray-700 text-center"><b>TOTAL</b></TableHead>
                 <TableHead className="font-medium text-gray-700 text-center">Status</TableHead>
-                <TableHead className="font-medium text-gray-700 text-center">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -539,6 +523,7 @@ return (
                   <TableCell className="text-center">{item.cliwh}</TableCell>
                   <TableCell className="text-center">{item.bhdwh}</TableCell>
                   <TableCell className="text-center">{item.ecmwh}</TableCell>
+                  <TableCell className="text-center font-semibold text-gray-900">{item.totalStock}</TableCell>
                   <TableCell className="text-center">
                     {item.totalStock === 0 ? (
                       <Badge variant="destructive">Out of Stock</Badge>
@@ -552,25 +537,13 @@ return (
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-center">
-                    <EditProductModal
-                      product={item.originalData}
-                      onProductUpdated={refetch}
-                      trigger={
-                        <Button variant="outline" size="sm">
-                          <Edit className="w-3 h-3 mr-1" />
-                          Edit
-                        </Button>
-                      }
-                    />
-                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
           <div className="flex justify-between items-center py-4 px-6">
             <div className="text-sm text-gray-600">
-                              Showing {(page - 1) * itemsPerPage + 1} to {Math.min(page * itemsPerPage, actualTotalItems)} of {actualTotalItems} entries
+              Showing {(page - 1) * itemsPerPage + 1} to {Math.min(page * itemsPerPage, actualTotalItems)} of {actualTotalItems} entries
             </div>
             <div className="flex space-x-2">
               <Button
@@ -587,7 +560,7 @@ return (
               <Button
                 variant="outline"
                 size="sm"
-                                  disabled={page >= Math.ceil(actualTotalItems / itemsPerPage)}
+                disabled={page >= Math.ceil(actualTotalItems / itemsPerPage)}
                 onClick={handleNextPage}
               >
                 Next
