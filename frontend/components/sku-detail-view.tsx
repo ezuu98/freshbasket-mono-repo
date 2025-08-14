@@ -1,8 +1,11 @@
 "use client"
 
-import { ArrowLeft, User } from "lucide-react"
+import { ArrowLeft, User, Calendar } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
 import type { InventoryItem } from "@/lib/api-client"
 import { useEffect, useState, useMemo } from "react"
 import { apiClient, type StockMovement } from "@/lib/api-client"
@@ -12,79 +15,72 @@ interface SkuDetailViewProps {
   onBack: () => void
 }
 
+// Get default date range (current month)
 const today = new Date();
-const currentYear = today.getFullYear();
-const currentMonth = String(today.getMonth() + 1).padStart(2, "0");
-
-const months = [
-  { value: "01", name: "January" },
-  { value: "02", name: "February" },
-  { value: "03", name: "March" },
-  { value: "04", name: "April" },
-  { value: "05", name: "May" },
-  { value: "06", name: "June" },
-  { value: "07", name: "July" },
-  { value: "08", name: "August" },
-  { value: "09", name: "September" },
-  { value: "10", name: "October" },
-  { value: "11", name: "November" },
-  { value: "12", name: "December" },
-];
-
-const years = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i);
+const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
 export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
-  const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  console.log(sku)
+  const [dateRange, setDateRange] = useState({
+    startDate: firstDayOfMonth.toISOString().split('T')[0],
+    endDate: lastDayOfMonth.toISOString().split('T')[0]
+  });
   const [stockMovementData, setStockMovementData] = useState<StockMovement[]>([]);
   const [stockMovementLoading, setStockMovementLoading] = useState(false);
   const [stockMovementError, setStockMovementError] = useState<string | null>(null);
-
-
+  const [openingStocks, setOpeningStocks] = useState<Record<string, number>>({});
+  const [stockVarianceData, setStockVarianceData] = useState<any[]>([]);
+  const [forceUpdate, setForceUpdate] = useState(0);
 
   const warehouseData = useMemo(() => {
     const warehouses = new Map();
-    
+
     // Add warehouses from inventory data
     sku.warehouse_inventory?.forEach((wh) => {
       const code = wh.warehouse?.code || "";
       const name = wh.warehouse?.name || wh.warehouse?.code || "Unknown";
+      const warehouseId = wh.warehouse?.id;
       warehouses.set(code, {
         warehouse: name,
         warehouseCode: code,
-        openingStock: wh.quantity || 0,
+        warehouseId: warehouseId,
+        openingStock: warehouseId ? (openingStocks[warehouseId.toString()] || wh.quantity || 0) : (wh.quantity || 0),
         lastUpdated: "N/A",
       });
     });
-    
-    // Add warehouses from stock movements
+
     stockMovementData?.forEach((movement) => {
       const sourceWarehouse = movement.warehouse?.code;
       const destWarehouse = movement.warehouse_dest?.code;
-      
+
+
       if (sourceWarehouse && !warehouses.has(sourceWarehouse)) {
         warehouses.set(sourceWarehouse, {
           warehouse: movement.warehouse?.name || sourceWarehouse,
           warehouseCode: sourceWarehouse,
-          openingStock: 0,
+          warehouseId: movement.warehouse?.id, // Add warehouse ID if available
+          openingStock: movement.warehouse?.id ? (openingStocks[movement.warehouse.id.toString()] || 0) : 0,
           calculatedStock: 0,
           lastUpdated: "N/A",
         });
       }
-      
+
       if (destWarehouse && !warehouses.has(destWarehouse)) {
         warehouses.set(destWarehouse, {
           warehouse: movement.warehouse_dest?.name || destWarehouse,
           warehouseCode: destWarehouse,
-          openingStock: 0,
+          warehouseId: movement.warehouse_dest?.id, // Add warehouse ID if available
+          openingStock: movement.warehouse_dest?.id ? (openingStocks[movement.warehouse_dest.id.toString()] || 0) : 0,
           calculatedStock: 0,
           lastUpdated: "N/A",
         });
       }
     });
-    
-    return Array.from(warehouses.values());
-  }, [sku.warehouse_inventory, stockMovementData]);
+
+    const result = Array.from(warehouses.values());
+    return result;
+  }, [sku.warehouse_inventory, stockMovementData, openingStocks, forceUpdate]);
 
   // Enhanced function to get stock movement data for a warehouse
   const getWarehouseMovements = (warehouseCode: string) => {
@@ -92,7 +88,7 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
     const warehouseMovements = stockMovementData.reduce((acc, movement) => {
       const sourceWarehouse = movement.warehouse?.code;
       const destWarehouse = movement.warehouse_dest?.code;
-      
+
       if (sourceWarehouse === warehouseCode) {
         switch (movement.movement_type) {
           case 'purchase':
@@ -108,7 +104,7 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
             acc.purchase_returns += Math.abs(movement.quantity);
             break;
           case 'transfer_in':
-            acc.transfer_in += Math.abs(movement.quantity);
+            acc.transfer_out += Math.abs(movement.quantity);
             break;
           case 'wastages':
             acc.wastages += Math.abs(movement.quantity);
@@ -118,7 +114,7 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
             break;
         }
       }
-      
+
       if (destWarehouse === warehouseCode) {
         // This warehouse is the destination
         switch (movement.movement_type) {
@@ -126,14 +122,14 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
             acc.purchases += movement.quantity;
             break;
           case 'transfer_in':
-            acc.transfer_out += movement.quantity;
+            acc.transfer_in += movement.quantity;
             break;
           case 'manufacturing':
             acc.manufacturing += movement.quantity;
             break;
         }
       }
-      
+
       return acc;
     }, {
       warehouse_code: warehouseCode,
@@ -147,7 +143,7 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
       manufacturing: 0,
       consumption: 0
     });
-    
+
     return warehouseMovements;
   };
 
@@ -215,15 +211,45 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
 
   useEffect(() => {
     const fetchStockMovementData = async () => {
+      if (!sku?.odoo_id == null && !sku?.id == null) {
+        console.warn("No product ID available for stock movement data");
+        return;
+      }
+
       setStockMovementLoading(true);
       setStockMovementError(null);
       try {
-        const response = await apiClient.getStockMovementDetails(
-          sku.odoo_id?.toString() || sku.id?.toString() || "",
-          parseInt(selectedMonth),
-          selectedYear
+        const productId = sku.odoo_id?.toString() || sku.id?.toString() || "";
+
+        // Use date range API
+        const { success, data, opening_stocks } = await apiClient.getStockMovementDetailsByDateRange(
+          productId,
+          dateRange.startDate,
+          dateRange.endDate
         );
-        setStockMovementData(response.data);
+     
+        if (success) {
+          setStockMovementData(data);
+          setOpeningStocks(opening_stocks || {});
+
+          // Fetch stock variance data for the end date
+          try {
+            const varianceResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/stock-corrections/variance/${productId}?date=${dateRange.endDate}`, {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            const varianceData = await varianceResponse.json();
+            if (varianceData.success) {
+              setStockVarianceData(varianceData.data);
+            } else {
+              setStockVarianceData([]);
+            }
+          } catch (varianceErr) {
+            setStockVarianceData([]);
+          }
+        }
       } catch (err: any) {
         setStockMovementError(err.message || "Failed to fetch stock movement data");
         console.error("Stock movement data error:", err);
@@ -233,7 +259,20 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
     };
 
     fetchStockMovementData();
-  }, [sku.odoo_id, sku.id, selectedMonth, selectedYear]);
+  }, [sku.odoo_id, sku.id, dateRange.startDate, dateRange.endDate]);
+
+  useEffect(() => {
+    // Force a re-calculation by updating a dummy state if needed
+    setForceUpdate(prev => prev + 1);
+  }, [stockMovementData]);
+
+  // Monitor state changes
+  useEffect(() => {
+  }, [stockMovementData]);
+
+  useEffect(() => {
+  }, [openingStocks]);
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -354,34 +393,51 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Warehouse Inventory</h2>
 
-              {/* Month & Year Dropdowns */}
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Select Month:</label>
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  {months.map((month) => (
-                    <option key={month.value} value={month.value}>
-                      {month.name}
-                    </option>
-                  ))}
-                </select>
+              {/* Date Range Filters */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-gray-500" />
+                  <Label htmlFor="start-date" className="text-sm font-medium text-gray-700">
+                    From:
+                  </Label>
+                  <input
+                    id="start-date"
+                    type="date"
+                    value={dateRange.startDate}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
 
-                <label className="text-sm font-medium text-gray-700">Select Year:</label>
-                <select
-                  id="year-select"
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="end-date" className="text-sm font-medium text-gray-700">
+                    To:
+                  </Label>
+                  <input
+                    id="end-date"
+                    type="date"
+                    value={dateRange.endDate}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const today = new Date();
+                    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                    setDateRange({
+                      startDate: firstDay.toISOString().split('T')[0],
+                      endDate: lastDay.toISOString().split('T')[0]
+                    });
+                  }}
+                  className="text-xs"
                 >
-                  {years.map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
-                </select>
+                  Current Month
+                </Button>
               </div>
             </div>
 
@@ -401,6 +457,8 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
                     <TableHead className="font-medium text-gray-700 text-center min-w-[120px]">Manufacturing</TableHead>
                     <TableHead className="font-medium text-gray-700 text-center min-w-[120px]">Consumption</TableHead>
                     <TableHead className="font-medium text-gray-700 text-center min-w-[120px]">Closing Stock</TableHead>
+                    <TableHead className="font-medium text-gray-700 text-center min-w-[120px]">Corrected Stock</TableHead>
+                    <TableHead className="font-medium text-gray-700 text-center min-w-[120px]">Stock Variance</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -421,6 +479,14 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
                           - Math.abs(movements.wastages)
                           - Math.abs(movements.consumption)
                         );
+
+                        // Get variance data for this warehouse
+                        const warehouseVariance = stockVarianceData.find(
+                          v => v.warehouse_code === row.warehouseCode
+                        );
+                        const correctedStock = warehouseVariance?.corrected_closing_stock || null;
+                        const stockVariance = warehouseVariance?.stock_variance || 0;
+                        const hasCorrection = warehouseVariance?.has_correction || false;
 
                         return (
                           <TableRow key={index} className="hover:bg-gray-50">
@@ -443,6 +509,25 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
                             <TableCell className="text-center text-blue-500">{movements.manufacturing}</TableCell>
                             <TableCell className="text-center text-blue-500">{movements.consumption}</TableCell>
                             <TableCell className="text-center font-medium text-blue-600">{closingStock}</TableCell>
+                            <TableCell className="text-center">
+                              {hasCorrection ? (
+                                <span className="font-medium text-purple-600">{correctedStock}</span>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {hasCorrection ? (
+                                <Badge
+                                  variant={stockVariance > 0 ? "destructive" : stockVariance < 0 ? "default" : "secondary"}
+                                  className="text-xs"
+                                >
+                                  {stockVariance > 0 ? '+' : ''}{stockVariance}
+                                </Badge>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </TableCell>
                           </TableRow>
                         );
                       })}
@@ -460,6 +545,22 @@ export function SkuDetailView({ sku, onBack }: SkuDetailViewProps) {
                         <TableCell className="text-center font-bold text-blue-500">{totals.totalManufacturing}</TableCell>
                         <TableCell className="text-center font-bold text-blue-500">{totals.totalConsumption}</TableCell>
                         <TableCell className="text-center font-bold text-blue-600">{totals.totalClosingStock}</TableCell>
+                        <TableCell className="text-center font-bold text-purple-600">
+                          {stockVarianceData.reduce((sum, v) => sum + (v.corrected_closing_stock || 0), 0) || '-'}
+                        </TableCell>
+                        <TableCell className="text-center font-bold">
+                          {stockVarianceData.length > 0 ? (
+                            <Badge
+                              variant={stockVarianceData.reduce((sum, v) => sum + v.stock_variance, 0) > 0 ? "destructive" : "default"}
+                              className="text-xs"
+                            >
+                              {stockVarianceData.reduce((sum, v) => sum + v.stock_variance, 0) > 0 ? '+' : ''}
+                              {stockVarianceData.reduce((sum, v) => sum + v.stock_variance, 0)}
+                            </Badge>
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
                       </TableRow>
                     </>
                   ) : (
